@@ -35,6 +35,8 @@ function splitDataUrl(dataUrl: string) {
   return { mimeType: match[1], data: match[2] };
 }
 
+const CHEAP_MODEL = "gemini-2.5-flash-image";
+
 type GeminiResponse = {
   candidates?: {
     finishReason?: string;
@@ -60,16 +62,20 @@ function callGemini(model: string, parts: unknown[], withImageConfig: boolean) {
  * Gera uma imagem a partir de UMA imagem de referência e um texto.
  * A referência é a foto (só na criação do personagem) ou a ficha do personagem (em todas as páginas).
  */
-export async function generateImage(referenceDataUrl: string, prompt: string, demoTitle: string, landscape = false): Promise<GenResult> {
+export async function generateImage(referenceDataUrl: string, prompt: string, demoTitle: string, isCharacter = false): Promise<GenResult> {
   if (isDemoMode()) return demoImage(demoTitle);
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-image";
+  // Custo: o personagem é gerado 1 vez e define a qualidade de tudo, então pode usar o modelo caro.
+  // As páginas são muitas e só precisam copiar a ficha, então usam o modelo barato por padrão.
+  const model = isCharacter
+    ? process.env.GEMINI_MODEL_CHARACTER || process.env.GEMINI_MODEL || CHEAP_MODEL
+    : process.env.GEMINI_MODEL_SCENES || CHEAP_MODEL;
   const { mimeType, data } = splitDataUrl(referenceDataUrl);
   const parts = [{ inline_data: { mime_type: mimeType, data } }, { text: prompt }];
 
   // A ficha do personagem sai melhor sem forçar página em pé; as cenas pedem 3:4.
-  let res = await callGemini(model, parts, !landscape);
-  if (res.status === 400 && !landscape) res = await callGemini(model, parts, false); // modelo que não aceita imageConfig
+  let res = await callGemini(model, parts, !isCharacter);
+  if (res.status === 400 && !isCharacter) res = await callGemini(model, parts, false); // modelo que não aceita imageConfig
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`O fornecedor de IA recusou o pedido (${res.status}). ${text.slice(0, 300)}`);

@@ -24,9 +24,9 @@ os desenhos são bonecos de exemplo e nada é cobrado. Já dá para testar o flu
 2. Copie `.env.example` para `.env.local` e preencha `GEMINI_KEY`.
 3. Reinicie o `npm run dev`.
 
-`GEMINI_MODEL` escolhe o modelo: `gemini-2.5-flash-image` (padrão) ou
-`gemini-3-pro-image-preview` (pago, exige faturamento ativo, mais fiel ao personagem).
-Cada livro faz 1 chamada para o personagem e 5 para as páginas.
+Dois modelos, para segurar o custo: `GEMINI_MODEL_CHARACTER` gera a ficha do personagem
+(1 vez por criança, vale o modelo melhor) e `GEMINI_MODEL_SCENES` gera as 5 páginas
+(padrão: `gemini-2.5-flash-image`, o mais barato). Veja os preços no `.env.example`.
 
 ## O teste que importa (Fase 2 do plano)
 
