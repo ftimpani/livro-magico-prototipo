@@ -4,7 +4,7 @@
 export type GenResult = { dataUrl: string; demo: boolean };
 
 export function isDemoMode() {
-  return !process.env.FAL_KEY;
+  return !process.env.GEMINI_KEY;
 }
 
 function demoImage(title: string): GenResult {
@@ -28,31 +28,44 @@ function demoImage(title: string): GenResult {
   return { dataUrl: "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64"), demo: true };
 }
 
+/** Separa o data URL ("data:image/png;base64,AAAA...") em mime type e base64 puro. */
+function splitDataUrl(dataUrl: string) {
+  const match = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl);
+  if (!match) throw new Error("Formato de imagem inválido.");
+  return { mimeType: match[1], data: match[2] };
+}
+
 export async function generateDrawing(photoDataUrl: string, prompt: string, sceneTitle: string): Promise<GenResult> {
   if (isDemoMode()) return demoImage(sceneTitle);
 
-  const model = process.env.FAL_MODEL || "fal-ai/gemini-25-flash-image/edit";
-  const body: Record<string, unknown> = { prompt, num_images: 1, output_format: "png" };
-  if (model.includes("kontext")) body.image_url = photoDataUrl;
-  else body.image_urls = [photoDataUrl];
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-image";
+  const { mimeType, data } = splitDataUrl(photoDataUrl);
 
-  const res = await fetch(`https://fal.run/${model}`, {
-    method: "POST",
-    headers: { Authorization: `Key ${process.env.FAL_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data } }],
+          },
+        ],
+        generationConfig: { responseModalities: ["IMAGE"] },
+      }),
+    },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`O fornecedor de IA recusou o pedido (${res.status}). ${text.slice(0, 300)}`);
   }
-  const json = (await res.json()) as { images?: { url: string }[] };
-  const url = json.images?.[0]?.url;
-  if (!url) throw new Error("O fornecedor de IA não devolveu nenhuma imagem.");
+  const json = (await res.json()) as {
+    candidates?: { content?: { parts?: { inlineData?: { mimeType: string; data: string } }[] } }[];
+  };
+  const part = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
+  const inline = part?.inlineData;
+  if (!inline) throw new Error("O fornecedor de IA não devolveu nenhuma imagem.");
 
-  if (url.startsWith("data:")) return { dataUrl: url, demo: false };
-  const img = await fetch(url);
-  if (!img.ok) throw new Error("Não foi possível baixar a imagem gerada.");
-  const type = img.headers.get("content-type") || "image/png";
-  const b64 = Buffer.from(await img.arrayBuffer()).toString("base64");
-  return { dataUrl: `data:${type};base64,${b64}`, demo: false };
+  return { dataUrl: `data:${inline.mimeType};base64,${inline.data}`, demo: false };
 }
