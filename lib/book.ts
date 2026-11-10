@@ -3,7 +3,7 @@ import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { makeMaze, makeWordSearch, seedFrom } from "./activities";
 import type { Theme } from "./themes";
 
-export type BookImage = { title: string; png: Uint8Array };
+export type BookImage = { title: string; png: Uint8Array; text?: string };
 export type BookInput = {
   name: string;
   age: number;
@@ -89,7 +89,7 @@ export async function buildBook(input: BookInput): Promise<Uint8Array> {
   center(page, NAME, H - 150, 52, bold);
   center(page, theme.bookTitle.toUpperCase(), H - 190, 26, bold);
   if (input.images[0]) await drawImageFit(doc, page, input.images[0].png, M, 80, W - 2 * M, H - 300);
-  center(page, "Um livro para colorir e brincar", 50, 13, regular, GRAY);
+  center(page, "Uma história para ler, colorir e brincar", 50, 13, regular, GRAY);
 
   // 2. Este livro pertence a
   page = newPage();
@@ -111,7 +111,11 @@ export async function buildBook(input: BookInput): Promise<Uint8Array> {
   for (const image of input.images) {
     page = newPage();
     center(page, cleanText(image.title).toUpperCase(), H - 70, 22, bold);
-    await drawImageFit(doc, page, image.png, M, 70, W - 2 * M, H - 170);
+    // Trecho da história embaixo do desenho, com o nome da criança.
+    const story = wrap(cleanText((image.text || "").replace(/\{NOME\}/g, name), 200), regular, 16, W - 2 * M - 20).slice(0, 3);
+    const textSpace = story.length ? 30 + story.length * 22 : 0;
+    await drawImageFit(doc, page, image.png, M, 55 + textSpace, W - 2 * M, H - 155 - textSpace);
+    story.forEach((l, i) => center(page, l, 45 + textSpace - 22 * (i + 1), 16, regular));
   }
 
   // 4. Labirinto

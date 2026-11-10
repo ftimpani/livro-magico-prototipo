@@ -31,6 +31,22 @@ async function shrinkPhoto(file: File): Promise<string> {
   }
 }
 
+/** Deixa a ficha do personagem leve (JPEG, máx. 1280 px) para reenviar a cada página. */
+async function shrinkSheet(dataUrl: string): Promise<string> {
+  const img = await loadImage(dataUrl);
+  const w = img.width || 1200;
+  const h = img.height || 900;
+  const scale = Math.min(1, 1280 / Math.max(w, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.9);
+}
+
 /** Converte qualquer imagem recebida em PNG com fundo branco, pronta para o PDF. */
 async function toPng(dataUrl: string): Promise<Uint8Array> {
   const img = await loadImage(dataUrl);
@@ -49,6 +65,9 @@ async function toPng(dataUrl: string): Promise<Uint8Array> {
 export default function Home() {
   const [status, setStatus] = useState<{ demo: boolean; needsCode: boolean } | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [character, setCharacter] = useState<string | null>(null); // ficha ainda em análise
+  const [approved, setApproved] = useState(false);
+  const [making, setMaking] = useState(false);
   const [consent, setConsent] = useState(false);
   const [name, setName] = useState("");
   const [age, setAge] = useState("5");
@@ -68,7 +87,8 @@ export default function Home() {
   }, []);
 
   const theme = THEMES.find((t) => t.id === themeId)!;
-  const ready = !!photo && consent && name.trim().length > 0 && !busy;
+  const canCreate = !!photo && consent && !making && !busy;
+  const ready = !!character && approved && name.trim().length > 0 && !busy;
   const done = drawings.length > 0 && drawings.every((d) => d.image && !d.loading);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -82,11 +102,39 @@ export default function Home() {
     }
   }
 
+  async function createCharacter() {
+    setMaking(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "character", photo, consent, code }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Erro ao criar o personagem.");
+      setCharacter(await shrinkSheet(json.image));
+      setApproved(false);
+      setDrawings([]);
+    } catch (e) {
+      setMessage({ kind: "error", text: e instanceof Error ? e.message : "Erro ao criar o personagem." });
+    }
+    setMaking(false);
+  }
+
+  /** Aprovou: a foto sai da memória. Daqui em diante só a ficha é usada. */
+  function approve() {
+    setApproved(true);
+    setPhoto(null);
+    if (fileRef.current) fileRef.current.value = "";
+    setMessage({ kind: "ok", text: "Personagem aprovado. A foto foi descartada; o livro usa só o desenho." });
+  }
+
   async function generateOne(sceneId: string) {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ photo, themeId, sceneId, consent, code }),
+      body: JSON.stringify({ kind: "scene", character, themeId, sceneId, code }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "Erro ao gerar o desenho.");
@@ -123,7 +171,8 @@ export default function Home() {
     setMessage(null);
     try {
       const images = [];
-      for (const d of drawings) if (d.image) images.push({ title: d.title, png: await toPng(d.image) });
+      for (const d of drawings)
+        if (d.image) images.push({ title: d.title, png: await toPng(d.image), text: theme.scenes.find((s) => s.id === d.sceneId)?.story });
       const pdf = await buildBook({ name, age: Number(age) || 5, theme, images, dedication, demo: status?.demo });
       const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: "application/pdf" }));
       const a = document.createElement("a");
@@ -140,6 +189,8 @@ export default function Home() {
 
   function forget() {
     setPhoto(null);
+    setCharacter(null);
+    setApproved(false);
     setDrawings([]);
     setConsent(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -149,7 +200,7 @@ export default function Home() {
     <main>
       <span className="badge">Protótipo de teste</span>
       <h1>A criança vira a heroína do próprio livro</h1>
-      <p className="lead">Envie uma foto, escolha a aventura e baixe um livro para colorir com atividades e o nome dela.</p>
+      <p className="lead">A foto vira um personagem só dela. Depois, cada livro conta uma história nova com esse mesmo personagem.</p>
 
       {status?.demo && (
         <div className="demo" role="status">
@@ -159,22 +210,49 @@ export default function Home() {
       )}
 
       <section className="card">
-        <h2><span className="step">1</span>Foto e autorização</h2>
-        <div className="photo">
-          {photo && <img src={photo} alt="Foto enviada" />}
-          <div>
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile} aria-label="Escolher foto da criança" />
-            <p className="hint">Rosto de frente, boa luz, sem óculos escuros, só uma criança na foto.</p>
-            {photo && <button className="ghost" onClick={forget}>Apagar foto e desenhos</button>}
+        <h2><span className="step">1</span>Crie o personagem</h2>
+        {!approved && (
+          <>
+            <div className="photo">
+              {photo && <img src={photo} alt="Foto enviada" />}
+              <div>
+                <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile} aria-label="Escolher foto da criança" />
+                <p className="hint">Rosto de frente, boa luz, sem óculos escuros, só uma criança na foto.</p>
+              </div>
+            </div>
+            <label className="consent">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <span>
+                Sou pai, mãe ou responsável legal por esta criança e autorizo o uso desta foto apenas para criar o personagem. A foto é
+                enviada uma única vez ao fornecedor de IA e não fica guardada neste site; depois de aprovado o personagem, ela é descartada.
+              </span>
+            </label>
+            {status?.needsCode && (
+              <>
+                <label htmlFor="code">Código de acesso</label>
+                <input id="code" type="password" value={code} onChange={(e) => setCode(e.target.value)} />
+              </>
+            )}
+          </>
+        )}
+        {character && (
+          <div className="sheet">
+            <img src={character} alt="Ficha do personagem: a criança desenhada de corpo inteiro e em close" />
+            <p className="hint">
+              {approved ? "Este é o personagem de todos os livros." : "Ficou parecido? Se não, refaça quantas vezes quiser antes de aprovar."}
+            </p>
           </div>
+        )}
+        <div className="actions">
+          {!approved && (
+            <button className={character ? "ghost" : "primary"} disabled={!canCreate} onClick={createCharacter}>
+              {making ? "Desenhando o personagem..." : character ? "Refazer personagem" : "Criar personagem"}
+            </button>
+          )}
+          {character && !approved && <button className="primary" disabled={making} onClick={approve}>Aprovar personagem</button>}
+          {(photo || character) && <button className="ghost" disabled={making || busy} onClick={forget}>Apagar tudo e recomeçar</button>}
+          {!character && !canCreate && !making && <span className="hint">Falta: {[!photo && "foto", !consent && "autorização"].filter(Boolean).join(", ")}</span>}
         </div>
-        <label className="consent">
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-          <span>
-            Sou pai, mãe ou responsável legal por esta criança e autorizo o uso desta foto apenas para criar os desenhos deste livro. A
-            foto é enviada ao fornecedor de IA para gerar os desenhos e não fica guardada neste site.
-          </span>
-        </label>
       </section>
 
       <section className="card">
@@ -195,34 +273,28 @@ export default function Home() {
       </section>
 
       <section className="card">
-        <h2><span className="step">3</span>Escolha a aventura</h2>
+        <h2><span className="step">3</span>Escolha a história</h2>
         <div className="themes">
           {THEMES.map((t) => (
             <button key={t.id} className="theme" aria-pressed={t.id === themeId} onClick={() => setThemeId(t.id)} disabled={busy}>
               <span aria-hidden="true">{t.emoji}</span>
               <strong>{t.title}</strong>
               <br />
-              <small>{t.scenes.length} desenhos</small>
+              <small>{t.scenes.length} páginas</small>
             </button>
           ))}
         </div>
-        {status?.needsCode && (
-          <>
-            <label htmlFor="code">Código de acesso</label>
-            <input id="code" type="password" value={code} onChange={(e) => setCode(e.target.value)} />
-          </>
-        )}
         <div className="actions">
           <button className="primary" disabled={!ready} onClick={start}>
-            {busy ? "Gerando..." : `Criar ${theme.scenes.length} desenhos`}
+            {busy ? "Gerando..." : `Criar as ${theme.scenes.length} páginas da história`}
           </button>
-          {!ready && !busy && <span className="hint">Falta: {[!photo && "foto", !consent && "autorização", !name.trim() && "nome"].filter(Boolean).join(", ")}</span>}
+          {!ready && !busy && <span className="hint">Falta: {[!approved && "aprovar o personagem", !name.trim() && "nome"].filter(Boolean).join(", ")}</span>}
         </div>
       </section>
 
       {drawings.length > 0 && (
         <section className="card" aria-live="polite">
-          <h2><span className="step">4</span>Desenhos e livro</h2>
+          <h2><span className="step">4</span>Páginas e livro</h2>
           <div className="results">
             {drawings.map((d) => (
               <div className="result" key={d.sceneId}>
@@ -237,7 +309,7 @@ export default function Home() {
           </div>
           <div className="actions">
             <button className="primary" disabled={!done || busy} onClick={downloadPdf}>Baixar o livro em PDF</button>
-            <span className="hint">O PDF inclui capa, desenhos, labirinto, caça-palavras e diploma.</span>
+            <span className="hint">O PDF inclui capa, a história ilustrada para colorir, labirinto, caça-palavras e diploma.</span>
           </div>
         </section>
       )}
@@ -245,7 +317,8 @@ export default function Home() {
       {message && <p className={message.kind} role="alert">{message.text}</p>}
 
       <footer>
-        Protótipo para validação interna. Sem pagamento. As fotos não são gravadas no servidor; ao fechar a página, tudo é descartado.
+        Protótipo para validação interna. Sem pagamento. A foto não é gravada no servidor e é descartada quando o personagem é aprovado; ao
+        fechar a página, o personagem e as páginas também somem.
       </footer>
     </main>
   );

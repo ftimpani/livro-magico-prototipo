@@ -1,9 +1,10 @@
 # Livro Mágico: protótipo
 
-Site de teste que transforma a foto de uma criança em um livro para colorir em PDF:
-capa com o nome, 5 desenhos do tema, labirinto, caça-palavras e diploma.
-Ainda **sem pagamento, sem login e sem banco de dados**. O objetivo é validar a
-qualidade dos desenhos e a regra do fornecedor de IA antes de construir o resto.
+A foto da criança vira uma **ficha de personagem** (aprovada pelos pais). A foto é
+descartada e todas as páginas do livro são desenhadas a partir da ficha, para o
+personagem ser sempre o mesmo. O PDF traz capa com o nome, 5 páginas de história
+para colorir, labirinto, caça-palavras e diploma.
+Ainda **sem pagamento, sem login e sem banco de dados**.
 
 ## Rodar no computador
 
@@ -19,18 +20,13 @@ os desenhos são bonecos de exemplo e nada é cobrado. Já dá para testar o flu
 
 ## Ligar a IA de verdade
 
-1. Crie uma conta em https://fal.ai, adicione créditos (US$ 5 bastam para o teste) e gere uma chave em "API Keys".
-2. Copie `.env.example` para `.env.local` e preencha `FAL_KEY`.
+1. Gere uma chave em https://aistudio.google.com (Get API key).
+2. Copie `.env.example` para `.env.local` e preencha `GEMINI_KEY`.
 3. Reinicie o `npm run dev`.
 
-Cada livro gera 5 imagens. No modelo padrão (Gemini 2.5 Flash Image, cerca de
-US$ 0,04 por imagem na fal.ai), um livro custa perto de US$ 0,20. Confira o preço
-atual na página do modelo.
-
-Para comparar modelos, troque `FAL_MODEL` no `.env.local`:
-
-- `fal-ai/gemini-25-flash-image/edit` (padrão)
-- `fal-ai/flux-pro/kontext`
+`GEMINI_MODEL` escolhe o modelo: `gemini-2.5-flash-image` (padrão) ou
+`gemini-3-pro-image-preview` (pago, exige faturamento ativo, mais fiel ao personagem).
+Cada livro faz 1 chamada para o personagem e 5 para as páginas.
 
 ## O teste que importa (Fase 2 do plano)
 

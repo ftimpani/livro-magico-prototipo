@@ -66,7 +66,7 @@ async function main() {
         name: "João Pedro 🚀",
         age,
         theme,
-        images: theme.scenes.map((s) => ({ title: s.title, png })),
+        images: theme.scenes.map((s) => ({ title: s.title, png, text: s.story })),
         dedication: "Com amor, vovó Ana",
         demo: true,
       });

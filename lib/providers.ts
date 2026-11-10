@@ -1,5 +1,5 @@
 // Adaptador do fornecedor de IA. Roda só no servidor.
-// A foto nunca é gravada em disco: chega na requisição, vai ao fornecedor e é descartada.
+// A foto nunca é gravada em disco: chega uma vez, vira a ficha do personagem e é descartada.
 
 export type GenResult = { dataUrl: string; demo: boolean };
 
@@ -35,37 +35,54 @@ function splitDataUrl(dataUrl: string) {
   return { mimeType: match[1], data: match[2] };
 }
 
-export async function generateDrawing(photoDataUrl: string, prompt: string, sceneTitle: string): Promise<GenResult> {
-  if (isDemoMode()) return demoImage(sceneTitle);
+type GeminiResponse = {
+  candidates?: {
+    finishReason?: string;
+    content?: { parts?: { text?: string; inlineData?: { mimeType: string; data: string } }[] };
+  }[];
+  promptFeedback?: { blockReason?: string };
+};
+
+function callGemini(model: string, parts: unknown[], withImageConfig: boolean) {
+  const generationConfig: Record<string, unknown> = { responseModalities: ["IMAGE"] };
+  if (withImageConfig) {
+    // Página em pé. Nos modelos Gemini 3, 1K mantém a resposta leve o bastante para a Vercel.
+    generationConfig.imageConfig = model.includes("gemini-3") ? { aspectRatio: "3:4", imageSize: "1K" } : { aspectRatio: "3:4" };
+  }
+  return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_KEY || "" },
+    body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+  });
+}
+
+/**
+ * Gera uma imagem a partir de UMA imagem de referência e um texto.
+ * A referência é a foto (só na criação do personagem) ou a ficha do personagem (em todas as páginas).
+ */
+export async function generateImage(referenceDataUrl: string, prompt: string, demoTitle: string, landscape = false): Promise<GenResult> {
+  if (isDemoMode()) return demoImage(demoTitle);
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-image";
-  const { mimeType, data } = splitDataUrl(photoDataUrl);
+  const { mimeType, data } = splitDataUrl(referenceDataUrl);
+  const parts = [{ inline_data: { mime_type: mimeType, data } }, { text: prompt }];
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ inline_data: { mime_type: mimeType, data } }, { text: prompt }],
-          },
-        ],
-        generationConfig: { responseModalities: ["IMAGE"] },
-      }),
-    },
-  );
+  // A ficha do personagem sai melhor sem forçar página em pé; as cenas pedem 3:4.
+  let res = await callGemini(model, parts, !landscape);
+  if (res.status === 400 && !landscape) res = await callGemini(model, parts, false); // modelo que não aceita imageConfig
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`O fornecedor de IA recusou o pedido (${res.status}). ${text.slice(0, 300)}`);
   }
-  const json = (await res.json()) as {
-    candidates?: { content?: { parts?: { inlineData?: { mimeType: string; data: string } }[] } }[];
-  };
-  const part = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
-  const inline = part?.inlineData;
-  if (!inline) throw new Error("O fornecedor de IA não devolveu nenhuma imagem.");
+  const json = (await res.json()) as GeminiResponse;
+  const candidate = json.candidates?.[0];
+  const inline = candidate?.content?.parts?.find((p) => p.inlineData)?.inlineData;
+  if (!inline) {
+    const why = json.promptFeedback?.blockReason || candidate?.finishReason || "";
+    const said = candidate?.content?.parts?.find((p) => p.text)?.text || "";
+    throw new Error(`O fornecedor de IA não devolveu imagem. ${why} ${said}`.trim().slice(0, 300));
+  }
+  if (inline.data.length > 4_000_000) throw new Error("A imagem gerada ficou grande demais para este protótipo. Tente refazer.");
 
   return { dataUrl: `data:${inline.mimeType};base64,${inline.data}`, demo: false };
 }
