@@ -49,7 +49,7 @@ export async function generateDrawing(photoDataUrl: string, prompt: string, scen
       body: JSON.stringify({
         contents: [
           {
-            parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data } }],
+            parts: [{ inline_data: { mime_type: mimeType, data } }, { text: prompt }],
           },
         ],
         generationConfig: { responseModalities: ["IMAGE"] },

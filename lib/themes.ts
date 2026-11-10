@@ -15,9 +15,10 @@ export type Theme = {
   scenes: Scene[];
 };
 
-export const BASE_PROMPT = `Turn the child in the reference photo into the hero of a children's coloring book page.
-Style: clean black line art on a pure white background, thick uniform outlines, no shading, no gray tones, no color, no filled black areas except the pupils, large simple shapes that are easy to color for ages 3 to 9, cute and friendly.
-The child must keep the same face, hairstyle and features as in the reference photo, drawn as a cartoon, fully clothed in the costume described.
+export const BASE_PROMPT = `Using the attached reference photo, draw this specific child as the hero of a children's coloring book page. This must be a recognizable likeness of this exact child, not a generic cartoon mascot.
+Preserve from the reference photo: the exact face shape, eye shape and spacing, eyebrows, nose, mouth and smile, ears, skin tone, and the hair's real color, texture, length and style. Keep natural, realistic child body proportions (not an exaggerated chibi or big-head mascot style).
+Style: clean black-and-white line art for coloring, on a pure white background. Bold, consistent black outlines, no shading, no gray tones, no color fill, no filled black areas except the pupils. Lines simple and clean enough for a child aged 3 to 9 to color inside, but the face must stay a faithful portrait of the reference photo.
+The child is fully clothed in the costume described below, in the pose and scene described.
 Use only original designs: no existing cartoon characters, no logos, no brand names, no sports team crests.
 Portrait orientation, the whole scene fits inside the page with a small margin. No text anywhere in the image.
 Scene: `;
